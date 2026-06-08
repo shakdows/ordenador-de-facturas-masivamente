@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ordenador de Comprobantes · Contabilidad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{
+  --paper:#f4f1ea;
+  --card:#fffefb;
+  --ink:#1b241f;
+  --ink-soft:#46524b;
+  --muted:#8a938c;
+  --line:#e4ddd0;
+  --line-soft:#eee8db;
+  --pine:#1f4d3a;
+  --pine-d:#163a2b;
+  --pine-t:#2a6349;
+  --bronze:#9c7b3f;
+  --bronze-l:#b8964f;
+  --emerald:#2f7a55;
+  --amber:#a9791f;
+  --rose:#a8443e;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(27,36,31,.04), 0 18px 40px -22px rgba(27,36,31,.22);
+  --shadow-sm:0 1px 2px rgba(27,36,31,.05), 0 8px 22px -16px rgba(27,36,31,.18);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Hanken Grotesk',system-ui,sans-serif;
+  color:var(--ink);
+  background:
+    radial-gradient(1200px 520px at 50% -8%, #fbf9f3, transparent 70%),
+    var(--paper);
+  background-attachment:fixed;
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  font-feature-settings:"ss01","cv11";
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+}
+.wrap{position:relative;z-index:1;max-width:980px;margin:0 auto;padding:46px 22px 80px}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* masthead */
+.masthead{display:flex;align-items:center;gap:18px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+.mono{
+  width:52px;height:52px;flex:0 0 auto;border-radius:12px;background:var(--pine);
+  display:grid;place-items:center;position:relative;box-shadow:var(--shadow-sm)
+}
+.mono span{font-family:'Fraunces';font-weight:600;color:var(--bronze-l);font-size:26px;line-height:1}
+.mono::after{content:"";position:absolute;inset:5px;border:1px solid rgba(184,150,79,.45);border-radius:8px}
+.eyebrow{font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--bronze);font-weight:600}
+h1{font-family:'Fraunces';font-optical-sizing:auto;font-weight:600;font-size:clamp(24px,3.4vw,34px);margin:4px 0 0;letter-spacing:-.01em;color:var(--ink)}
+.lede{color:var(--ink-soft);max-width:680px;line-height:1.65;font-size:15.5px;margin:26px 0 40px;font-weight:400}
+.lede b{color:var(--ink);font-weight:600}
+.lede em{font-style:italic;font-family:'Fraunces';color:var(--pine)}
+
+/* section */
+section{margin-bottom:30px}
+.s-head{display:flex;align-items:baseline;gap:14px;margin-bottom:18px}
+.s-num{font-family:'Fraunces';font-size:15px;color:var(--bronze);font-weight:600;letter-spacing:.05em}
+.s-title{font-family:'Fraunces';font-size:16px;font-weight:600;letter-spacing:.02em;color:var(--ink)}
+.s-rule{flex:1;height:1px;background:var(--line)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px}
+
+/* dropzone */
+#drop{
+  border:1.5px dashed var(--line);border-radius:12px;padding:48px 22px;text-align:center;cursor:pointer;
+  transition:.2s;background:linear-gradient(180deg,#fffefb,#faf7f0)
+}
+#drop:hover{border-color:var(--bronze);box-shadow:inset 0 0 0 100px rgba(156,123,63,.025)}
+#drop.drag{border-color:var(--pine);border-style:solid;background:rgba(31,77,58,.04)}
+#drop .ic{color:var(--pine);margin-bottom:14px}
+#drop .big{font-family:'Fraunces';font-size:20px;font-weight:600;color:var(--ink)}
+#drop .small{color:var(--muted);font-size:13.5px;margin-top:8px}
+
+.filelist{display:flex;flex-wrap:wrap;gap:7px;margin-top:18px;max-height:140px;overflow:auto}
+.chip{font-size:12px;background:#faf7f0;border:1px solid var(--line);border-radius:7px;padding:5px 10px;color:var(--ink-soft);display:flex;gap:7px;align-items:center}
+.chip .t{font-size:9px;font-weight:700;letter-spacing:.08em;padding:1px 5px;border-radius:4px}
+.chip.pdf .t{background:rgba(168,68,62,.1);color:var(--rose)}
+.chip.xml .t{background:rgba(47,122,85,.12);color:var(--emerald)}
+
+/* fields */
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:620px){.opts{grid-template-columns:1fr}}
+label.fld{display:block;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:9px}
+select{
+  width:100%;background:#fffefb;border:1px solid var(--line);color:var(--ink);border-radius:9px;
+  padding:12px 13px;font-family:'Hanken Grotesk';font-size:14.5px;font-weight:500;
+  appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%239c7b3f' stroke-width='1.6'%3E%3Cpath d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center
+}
+select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 3px rgba(31,77,58,.1)}
+.chk{display:flex;align-items:flex-start;gap:11px;font-size:14px;color:var(--ink-soft);margin-top:20px;cursor:pointer;line-height:1.5}
+.chk input{accent-color:var(--pine);width:17px;height:17px;margin-top:2px}
+
+/* buttons */
+.actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:26px;align-items:center}
+.btn{
+  font-family:'Hanken Grotesk';font-weight:600;letter-spacing:.01em;border:none;cursor:pointer;
+  padding:13px 26px;border-radius:10px;color:#fdfcf7;font-size:14.5px;transition:.16s;
+  background:linear-gradient(180deg,var(--pine-t),var(--pine));box-shadow:0 1px 1px rgba(0,0,0,.05),0 8px 18px -10px rgba(31,77,58,.6)
+}
+.btn:hover{transform:translateY(-1px);box-shadow:0 1px 1px rgba(0,0,0,.05),0 12px 24px -10px rgba(31,77,58,.6)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.btn.ghost{background:transparent;color:var(--pine);border:1px solid var(--line);box-shadow:none}
+.btn.ghost:hover{border-color:var(--pine);background:rgba(31,77,58,.03)}
+
+/* progress */
+#prog{display:none;margin-top:22px}
+.bar{height:6px;background:var(--line-soft);border-radius:999px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--pine),var(--bronze));transition:width .15s}
+#progtxt{font-size:12.5px;color:var(--ink-soft);margin-top:9px;letter-spacing:.02em}
+
+/* results */
+#results{display:none}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:24px}
+.stat{background:var(--card);padding:20px 18px;position:relative}
+.stat::before{content:"";position:absolute;top:0;left:18px;width:26px;height:2px;background:var(--bronze)}
+.stat .n{font-family:'Fraunces';font-size:30px;font-weight:600;color:var(--pine);line-height:1;font-variant-numeric:tabular-nums}
+.stat .l{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:9px;font-weight:600}
+
+details.emp{border:1px solid var(--line);border-radius:12px;margin-top:12px;overflow:hidden;background:var(--card);box-shadow:var(--shadow-sm)}
+details.emp[open]{box-shadow:var(--shadow)}
+details.emp>summary{list-style:none;cursor:pointer;padding:17px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;transition:background .15s}
+details.emp>summary:hover{background:#faf7f0}
+details.emp>summary::-webkit-details-marker{display:none}
+.emp .name{font-family:'Fraunces';font-weight:600;font-size:16px;color:var(--ink)}
+.emp .ruc{font-size:11px;color:var(--bronze);letter-spacing:.12em;font-weight:600;margin-top:3px}
+.emp .cnt{font-size:12.5px;color:var(--ink-soft);font-weight:500}
+.emp table{width:100%;border-collapse:collapse;font-size:13.5px}
+.emp th{text-align:left;color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;padding:11px 20px;border-top:1px solid var(--line);background:#faf7f0}
+.emp td{padding:11px 20px;border-top:1px solid var(--line-soft);color:var(--ink-soft)}
+.emp tbody tr:hover td{background:#fcfaf4}
+.tag{font-size:10px;font-weight:700;letter-spacing:.05em;padding:3px 9px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:rgba(47,122,85,.12);color:var(--emerald)}
+.tag.w{background:rgba(169,121,31,.13);color:var(--amber)}
+.right{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink);font-weight:500}
+.muted{color:var(--muted)}
+.note{font-size:12.5px;color:var(--muted);margin-top:18px;line-height:1.6;border-top:1px solid var(--line-soft);padding-top:16px}
+.note b{color:var(--ink-soft)}
+a.dl{display:none}
+footer{text-align:center;color:var(--muted);font-size:11px;margin-top:44px;letter-spacing:.18em;text-transform:uppercase}
+footer::before{content:"";display:block;width:44px;height:1px;background:var(--line);margin:0 auto 16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="mono"><span>V</span></div>
+    <div>
+      <div class="eyebrow">Veronix · Comprobantes</div>
+      <h1>Ordenador de comprobantes electrónicos</h1>
+    </div>
+  </div>
+
+  <p class="lede">Cargue sus comprobantes <em>sin ordenar</em> —PDF, XML o un archivo .zip—. El sistema los empareja, los <b>agrupa por empresa según su RUC</b> y consolida cada factura junto a su XML en un único PDF, listo para remitir a su proveedor o contador. <b>Todo el procesamiento ocurre en su navegador; ningún documento sale de su equipo.</b></p>
+
+  <section>
+    <div class="s-head"><span class="s-num">01</span><span class="s-title">Cargar archivos</span><span class="s-rule"></span></div>
+    <div class="card">
+      <div id="drop">
+        <div class="ic">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/></svg>
+        </div>
+        <div class="big">Arrastre aquí sus PDF y XML</div>
+        <div class="small">o haga clic para seleccionar · admite también archivos .zip</div>
+      </div>
+      <input id="file" type="file" multiple accept=".pdf,.xml,.zip" style="display:none">
+      <div id="filelist" class="filelist"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="s-head"><span class="s-num">02</span><span class="s-title">Parámetros</span><span class="s-rule"></span></div>
+    <div class="card">
+      <div class="opts">
+        <div>
+          <label class="fld">Agrupar por</label>
+          <select id="groupBy">
+            <option value="emisor">RUC del Emisor (quien emite)</option>
+            <option value="receptor">RUC del Receptor (cliente)</option>
+          </select>
+        </div>
+        <div>
+          <label class="fld">Formato de salida</label>
+          <select id="mode">
+            <option value="embed">Un PDF por factura · XML incrustado</option>
+            <option value="folders">Carpetas por empresa · PDF + XML</option>
+            <option value="merge">Un PDF por empresa · facturas unidas</option>
+          </select>
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" id="alsoXml" checked> Incluir además los XML por separado en cada carpeta <span class="muted">(recomendado para SUNAT y conciliación contable)</span></label>
+      <div class="actions">
+        <button class="btn" id="run" disabled>Procesar y ordenar</button>
+        <button class="btn ghost" id="reset">Limpiar</button>
+      </div>
+      <div id="prog"><div class="bar"><i></i></div><div id="progtxt"></div></div>
+    </div>
+  </section>
+
+  <section id="results">
+    <div class="s-head"><span class="s-num">03</span><span class="s-title">Resultado de la clasificación</span><span class="s-rule"></span></div>
+    <div class="card">
+      <div class="stats" id="stats"></div>
+      <div id="empresas"></div>
+      <div class="actions">
+        <button class="btn" id="download">Descargar ZIP ordenado</button>
+      </div>
+      <p class="note">El XML se adjunta byte por byte dentro del PDF, conservando su firma y validez ante SUNAT. Para visualizarlo, abra el PDF y consulte el panel de <b>archivos adjuntos</b>.</p>
+      <a class="dl" id="dl"></a>
+    </div>
+  </section>
+
+  <footer>Veronix · Procesamiento 100% local</footer>
+</div>
+
+<script>
+const { PDFDocument } = PDFLib;
+const $ = s => document.querySelector(s);
+
+let RAW = [];
+let COMPS = [];
+let GROUPS = [];
+
+const drop = $('#drop'), fileInput = $('#file');
+
+drop.addEventListener('click', ()=>fileInput.click());
+['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('drag')}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('drag')}));
+drop.addEventListener('drop',ev=>ingest(ev.dataTransfer.files));
+fileInput.addEventListener('change',ev=>ingest(ev.target.files));
+$('#reset').addEventListener('click',()=>{RAW=[];COMPS=[];GROUPS=[];renderFiles();$('#results').style.display='none';$('#run').disabled=true;fileInput.value=''});
+$('#run').addEventListener('click',process);
+$('#download').addEventListener('click',download);
+
+async function ingest(fileLike){
+  const arr = Array.from(fileLike||[]);
+  for(const f of arr){
+    if(/__MACOSX/.test(f.name)||f.name.startsWith('.')) continue;
+    const ext = (f.name.split('.').pop()||'').toLowerCase();
+    if(ext==='zip'){
+      try{
+        const zip = await JSZip.loadAsync(await f.arrayBuffer());
+        for(const path of Object.keys(zip.files)){
+          const entry = zip.files[path];
+          if(entry.dir) continue;
+          const base = path.split('/').pop();
+          if(!base || base.startsWith('.') || /__MACOSX/.test(path)) continue;
+          const e2 = (base.split('.').pop()||'').toLowerCase();
+          if(e2!=='pdf' && e2!=='xml') continue;
+          pushFile(base, e2, new Uint8Array(await entry.async('arraybuffer')));
+        }
+      }catch(err){ console.warn('zip',err); }
+    } else if(ext==='pdf' || ext==='xml'){
+      pushFile(f.name, ext, new Uint8Array(await f.arrayBuffer()));
+    }
+  }
+  renderFiles();
+  $('#run').disabled = RAW.length===0;
+}
+function pushFile(name, ext, bytes){
+  if(RAW.some(r=>r.name===name && r.bytes.length===bytes.length)) return;
+  RAW.push({name, ext, kind:ext, bytes});
+}
+function renderFiles(){
+  const fl = $('#filelist'); fl.innerHTML='';
+  RAW.slice(0,400).forEach(r=>{
+    const c=document.createElement('span');
+    c.className='chip '+r.kind;
+    c.innerHTML=`<span class="t">${r.kind.toUpperCase()}</span>${r.name}`;
+    fl.appendChild(c);
+  });
+  if(RAW.length>400){const m=document.createElement('span');m.className='chip';m.textContent=`+${RAW.length-400} más…`;fl.appendChild(m)}
+}
+
+/* ---------- utilidades XML ---------- */
+function baseKey(name){ return name.replace(/\.[^.]+$/,'').trim().toLowerCase(); }
+function txt(el){ return el ? (el.textContent||'').trim() : ''; }
+function descLocal(root, local){
+  if(!root) return null;
+  const els = root.getElementsByTagName('*');
+  for(let i=0;i<els.length;i++){ if(els[i].localName===local) return els[i]; }
+  return null;
+}
+function childLocal(root, local){
+  if(!root) return null;
+  const ch = root.children;
+  for(let i=0;i<ch.length;i++){ if(ch[i].localName===local) return ch[i]; }
+  return null;
+}
+function sunatFromName(name){
+  const b = name.replace(/\.[^.]+$/,'');
+  const m = b.match(/(\d{11})-(\d{2})-([A-Za-z0-9]+)-(\d+)/);
+  if(m) return {ruc:m[1], tipo:m[2], serieNum:m[3]+'-'+m[4]};
+  return null;
+}
+const TIPOS = {'01':'Factura','03':'Boleta','07':'Nota de Crédito','08':'Nota de Débito'};
+
+function parseXml(bytes){
+  let str;
+  try{ str = new TextDecoder('utf-8').decode(bytes); }
+  catch(_){ str = new TextDecoder('iso-8859-1').decode(bytes); }
+  let doc = new DOMParser().parseFromString(str,'application/xml');
+  if(doc.getElementsByTagName('parsererror').length){
+    try{ str = new TextDecoder('iso-8859-1').decode(bytes); doc = new DOMParser().parseFromString(str,'application/xml'); }catch(_){}
+    if(doc.getElementsByTagName('parsererror').length) return {error:true};
+  }
+  const root = doc.documentElement;
+  let comp = root;
+  if(!['Invoice','CreditNote','DebitNote'].includes(root.localName)){
+    comp = descLocal(root,'Invoice')||descLocal(root,'CreditNote')||descLocal(root,'DebitNote')||root;
+  }
+  const supplier = descLocal(comp,'AccountingSupplierParty');
+  const customer = descLocal(comp,'AccountingCustomerParty');
+  function partyRuc(p){
+    if(!p) return '';
+    const pid = descLocal(p,'PartyIdentification');
+    const id = pid ? descLocal(pid,'ID') : descLocal(p,'ID');
+    return txt(id);
+  }
+  function partyName(p){
+    if(!p) return '';
+    return txt(descLocal(p,'RegistrationName')) || txt(descLocal(p,'Name'));
+  }
+  const totalEl = descLocal(comp,'PayableAmount');
+  return {
+    serieNum: txt(childLocal(comp,'ID')),
+    fecha: txt(childLocal(comp,'IssueDate')),
+    tipo: txt(childLocal(comp,'InvoiceTypeCode')||childLocal(comp,'CreditNoteTypeCode')||childLocal(comp,'DebitNoteTypeCode')),
+    docName: comp.localName,
+    emisorRuc: partyRuc(supplier), emisorName: partyName(supplier),
+    receptorRuc: partyRuc(customer), receptorName: partyName(customer),
+    total: txt(totalEl), moneda: totalEl ? (totalEl.getAttribute('currencyID')||'') : ''
+  };
+}
+
+/* ---------- emparejado + agrupado ---------- */
+function buildComprobantes(){
+  const map = new Map();
+  for(const f of RAW){
+    const k = baseKey(f.name);
+    if(!map.has(k)) map.set(k,{key:k, pdf:null, xml:null});
+    const g = map.get(k);
+    if(f.kind==='pdf') g.pdf=f; else if(f.kind==='xml') g.xml=f;
+  }
+  const comps = [...map.values()].map(c=>{
+    const meta = c.xml ? parseXml(c.xml.bytes) : null;
+    const fromName = sunatFromName((c.pdf||c.xml).name);
+    return {...c, meta: (meta && !meta.error)?meta:null, fromName, badXml: meta && meta.error};
+  });
+
+  const lonelyPdf = comps.filter(c=>c.pdf && !c.xml && c.fromName);
+  const lonelyXml = comps.filter(c=>c.xml && !c.pdf);
+  for(const p of lonelyPdf){
+    const match = lonelyXml.find(x=>{
+      const xn = x.fromName ? x.fromName.serieNum : (x.meta?x.meta.serieNum:'');
+      const xruc = x.fromName ? x.fromName.ruc : (x.meta?x.meta.emisorRuc:'');
+      return xn && p.fromName.serieNum===xn && (!xruc || xruc===p.fromName.ruc);
+    });
+    if(match){ p.xml=match.xml; if(!p.meta && match.meta) p.meta=match.meta; match._merged=true; }
+  }
+  return comps.filter(c=>!c._merged);
+}
+
+function empresaInfo(c, by){
+  const m = c.meta;
+  let ruc='', name='';
+  if(by==='emisor'){
+    ruc = (m&&m.emisorRuc) || (c.fromName&&c.fromName.ruc) || '';
+    name = (m&&m.emisorName) || '';
+  } else {
+    ruc = (m&&m.receptorRuc) || '';
+    name = (m&&m.receptorName) || '';
+  }
+  if(!ruc) ruc='SIN_RUC';
+  if(!name) name = (by==='emisor'?'(emisor desconocido)':'(receptor desconocido)');
+  return {ruc, name};
+}
+function safe(s){ return (s||'').replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,' ').trim().slice(0,80); }
+function serieLabel(c){
+  if(c.meta && c.meta.serieNum) return c.meta.serieNum;
+  if(c.fromName) return c.fromName.serieNum;
+  return baseKey((c.pdf||c.xml).name);
+}
+
+function buildGroups(){
+  const by = $('#groupBy').value;
+  const gm = new Map();
+  for(const c of COMPS){
+    const info = empresaInfo(c, by);
+    const key = info.ruc+'|'+info.name;
+    if(!gm.has(key)) gm.set(key,{...info, comps:[], folder: safe(info.ruc+' - '+info.name)});
+    gm.get(key).comps.push(c);
+  }
+  const groups = [...gm.values()];
+  groups.forEach(g=>g.comps.sort((a,b)=>serieLabel(a).localeCompare(serieLabel(b))));
+  groups.sort((a,b)=>b.comps.length-a.comps.length);
+  return groups;
+}
+
+/* ---------- proceso (UI) ---------- */
+async function process(){
+  COMPS = buildComprobantes();
+  GROUPS = buildGroups();
+  renderResults();
+  $('#results').style.display='block';
+  $('#results').scrollIntoView({behavior:'smooth'});
+}
+
+function renderResults(){
+  const pares = COMPS.filter(c=>c.pdf&&c.xml).length;
+  const soloPdf = COMPS.filter(c=>c.pdf&&!c.xml).length;
+  const soloXml = COMPS.filter(c=>!c.pdf&&c.xml).length;
+  $('#stats').innerHTML = [
+    ['Empresas',GROUPS.length],
+    ['Comprobantes',COMPS.length],
+    ['Emparejados',pares],
+    ['Solo PDF',soloPdf],
+    ['Solo XML',soloXml]
+  ].map(([l,n])=>`<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+  const cont = $('#empresas'); cont.innerHTML='';
+  for(const g of GROUPS){
+    const det=document.createElement('details'); det.className='emp';
+    let totalMonto={};
+    const rows = g.comps.map(c=>{
+      const m=c.meta;
+      const tipo = m? (TIPOS[m.tipo]||m.docName||'-') : (c.fromName?'(sin XML)':'-');
+      const fecha = m? (m.fecha||'-') : '-';
+      const tot = m&&m.total? (m.moneda+' '+Number(m.total).toLocaleString('es-PE',{minimumFractionDigits:2})) : '-';
+      if(m&&m.total) totalMonto[m.moneda]=(totalMonto[m.moneda]||0)+Number(m.total);
+      const estado = (c.pdf&&c.xml)?'<span class="tag ok">PDF + XML</span>':
+                     (c.pdf?'<span class="tag w">solo PDF</span>':'<span class="tag w">solo XML</span>');
+      return `<tr><td style="color:var(--ink);font-weight:500">${serieLabel(c)}</td><td class="muted">${tipo}</td><td class="muted">${fecha}</td><td class="right">${tot}</td><td>${estado}</td></tr>`;
+    }).join('');
+    const totStr = Object.keys(totalMonto).map(k=>`${k} ${totalMonto[k].toLocaleString('es-PE',{minimumFractionDigits:2})}`).join(' · ')||'';
+    det.innerHTML = `<summary>
+        <div><div class="name">${g.name}</div><div class="ruc">RUC ${g.ruc}</div></div>
+        <div style="text-align:right"><div class="cnt">${g.comps.length} comprobante(s)</div><div class="muted tnum" style="font-size:12.5px">${totStr}</div></div>
+      </summary>
+      <table><thead><tr><th>Serie-Número</th><th>Tipo</th><th>Fecha</th><th class="right" style="text-align:right">Total</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`;
+    cont.appendChild(det);
+  }
+}
+
+/* ---------- generación del ZIP ---------- */
+async function embedXmlInPdf(pdfBytes, xmlBytes, xmlName){
+  const doc = await PDFDocument.load(pdfBytes, {ignoreEncryption:true});
+  await doc.attach(xmlBytes, xmlName, {
+    mimeType:'application/xml',
+    description:'Comprobante electrónico XML (SUNAT)',
+    creationDate:new Date(), modificationDate:new Date()
+  });
+  return await doc.save();
+}
+
+function setProg(p,txt){ $('#prog').style.display='block'; $('#prog .bar i').style.width=(p*100).toFixed(0)+'%'; $('#progtxt').textContent=txt; }
+
+async function download(){
+  const mode = $('#mode').value;
+  const alsoXml = $('#alsoXml').checked;
+  const zip = new JSZip();
+  const total = COMPS.length || 1;
+  let done = 0, errors=[];
+  setProg(0,'Preparando…');
+
+  for(const g of GROUPS){
+    const folder = zip.folder(g.folder);
+
+    if(mode==='merge'){
+      const out = await PDFDocument.create();
+      for(const c of g.comps){
+        try{
+          if(c.pdf){
+            const src = await PDFDocument.load(c.pdf.bytes,{ignoreEncryption:true});
+            const pages = await out.copyPages(src, src.getPageIndices());
+            pages.forEach(p=>out.addPage(p));
+          }
+          if(c.xml){ await out.attach(c.xml.bytes, safe(serieLabel(c))+'.xml', {mimeType:'application/xml', description:'XML SUNAT'}); }
+        }catch(e){ errors.push((c.pdf||c.xml).name+': '+e.message); }
+        done++; setProg(done/total, `Uniendo ${g.name}… (${done}/${total})`); await tick();
+      }
+      const bytes = await out.save();
+      folder.file(safe(g.ruc+' - '+g.name)+'.pdf', bytes);
+      if(alsoXml){ const xf=folder.folder('xml'); for(const c of g.comps){ if(c.xml) xf.file(safe(serieLabel(c))+'.xml', c.xml.bytes); } }
+      continue;
+    }
+
+    for(const c of g.comps){
+      const label = safe(serieLabel(c));
+      try{
+        if(mode==='embed'){
+          if(c.pdf && c.xml){
+            const bytes = await embedXmlInPdf(c.pdf.bytes, c.xml.bytes, label+'.xml');
+            folder.file(label+'.pdf', bytes);
+            if(alsoXml) folder.file(label+'.xml', c.xml.bytes);
+          } else if(c.pdf){
+            folder.file(label+'.pdf', c.pdf.bytes);
+          } else if(c.xml){
+            folder.file(label+'.xml', c.xml.bytes); errors.push(label+': solo XML (no se pudo generar PDF)');
+          }
+        } else {
+          if(c.pdf) folder.file(label+'.pdf', c.pdf.bytes);
+          if(c.xml) folder.file(label+'.xml', c.xml.bytes);
+        }
+      }catch(e){ errors.push(label+': '+e.message); }
+      done++; setProg(done/total, `Procesando ${label}… (${done}/${total})`); await tick();
+    }
+  }
+
+  if(errors.length){
+    zip.file('_AVISOS.txt','Comprobantes con incidencias:\n\n'+errors.join('\n'));
+  }
+
+  setProg(.99,'Comprimiendo ZIP…');
+  const blob = await zip.generateAsync({type:'blob', compression:'DEFLATE', compressionOptions:{level:6}});
+  const a=$('#dl'); a.href=URL.createObjectURL(blob);
+  a.download='comprobantes_ordenados_'+new Date().toISOString().slice(0,10)+'.zip';
+  a.click();
+  setProg(1, errors.length? `Listo · ${errors.length} aviso(s), revise _AVISOS.txt` : 'Proceso finalizado ✓');
+}
+const tick = ()=>new Promise(r=>setTimeout(r,0));
+</script>
+</body>
+</html>
