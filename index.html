@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
 <style>
 :root{
   --paper:#f4f1ea;
@@ -146,6 +147,21 @@ details.emp>summary{flex-wrap:wrap}
 .mini.ghost{background:transparent;color:var(--pine);border:1px solid var(--line);box-shadow:none}
 .mini.ghost:hover{background:rgba(31,77,58,.05);border-color:var(--pine)}
 .mini:disabled{opacity:.5;cursor:wait;transform:none}
+.mini.send{background:linear-gradient(180deg,#2a6349,#1f4d3a)}
+/* correo / outlook */
+.mail-config{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:620px){.mail-config{grid-template-columns:1fr}}
+.signin-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:18px}
+.acct{font-size:13px;color:var(--ink-soft)}
+.acct b{color:var(--pine)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;margin-right:7px;vertical-align:middle}
+.dot.on{background:var(--emerald)}
+.emp-mail{display:flex;align-items:center;gap:10px;padding:11px 20px;border-top:1px solid var(--line-soft);flex-wrap:wrap}
+.emp-mail label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.emp-mail input{flex:1;min-width:200px;background:#fffefb;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13.5px;font-family:'Hanken Grotesk'}
+.emp-mail input:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 3px rgba(31,77,58,.1)}
+.tag.cdr{background:rgba(156,123,63,.16);color:var(--bronze)}
+.csv-import{font-size:13px;color:var(--pine);cursor:pointer;text-decoration:underline;font-weight:600}
 .emp table{width:100%;border-collapse:collapse;font-size:13.5px}
 .emp th{text-align:left;color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;padding:11px 20px;border-top:1px solid var(--line);background:#faf7f0}
 .emp td{padding:11px 20px;border-top:1px solid var(--line-soft);color:var(--ink-soft)}
@@ -219,16 +235,41 @@ footer::before{content:"";display:block;width:44px;height:1px;background:var(--l
     </div>
   </section>
 
+  <section>
+    <div class="s-head"><span class="s-num">03</span><span class="s-title">Correo (Outlook)</span><span class="s-rule"></span></div>
+    <div class="card">
+      <div class="mail-config">
+        <div>
+          <label class="fld">Application (client) ID</label>
+          <input type="text" id="azClientId" placeholder="00000000-0000-0000-0000-000000000000">
+        </div>
+        <div>
+          <label class="fld">Directory (tenant) ID</label>
+          <input type="text" id="azTenantId" placeholder="ID del directorio (o 'organizations')">
+        </div>
+      </div>
+      <div class="signin-row">
+        <button class="btn" id="signin">Iniciar sesión con Outlook</button>
+        <button class="btn ghost" id="signout" style="display:none">Cerrar sesión</button>
+        <span class="acct" id="acct"><span class="dot"></span>Sin sesión</span>
+      </div>
+      <p class="note">Cada usuario contable inicia sesión con su propio Outlook; los correos salen <b>desde su buzón</b>. Los datos de configuración se guardan solo en este navegador. Funciona en la versión publicada (Vercel) con la URL registrada en Azure.</p>
+    </div>
+  </section>
+
   <section id="results">
-    <div class="s-head"><span class="s-num">03</span><span class="s-title">Resultado de la clasificación</span><span class="s-rule"></span></div>
+    <div class="s-head"><span class="s-num">04</span><span class="s-title">Resultado de la clasificación</span><span class="s-rule"></span></div>
     <div class="card">
       <div class="stats" id="stats"></div>
+      <div style="margin:0 0 14px"><span class="csv-import" id="csvImport">Importar correos por CSV (RUC,correo)</span><input type="file" id="csvFile" accept=".csv,.txt" style="display:none"></div>
       <div id="empresas"></div>
       <div class="actions">
-        <button class="btn" id="download">Descargar ZIP ordenado</button>
+        <button class="btn" id="downloadPer">Descargar · 1 ZIP por empresa</button>
+        <button class="btn ghost" id="download">ZIP en carpetas</button>
         <button class="btn ghost" id="downloadOne">Todo en un solo PDF</button>
+        <button class="btn ghost" id="sendAll">Enviar por Outlook</button>
       </div>
-      <p class="note">El XML se adjunta byte por byte dentro del PDF, conservando su firma y validez ante SUNAT. Para visualizarlo, abra el PDF y consulte el panel de <b>archivos adjuntos</b>.</p>
+      <p class="note">Al enviar, cada empresa recibe en su correo el <b>PDF + XML + CDR</b> de sus facturas (en uno o varios mensajes según el tamaño). El XML se adjunta byte por byte conservando su validez ante SUNAT.</p>
       <a class="dl" id="dl"></a>
     </div>
   </section>
@@ -254,14 +295,19 @@ fileInput.addEventListener('change',ev=>ingest(ev.target.files));
 $('#reset').addEventListener('click',()=>{RAW=[];COMPS=[];GROUPS=[];renderFiles();$('#results').style.display='none';$('#run').disabled=true;fileInput.value=''});
 $('#run').addEventListener('click',process);
 $('#download').addEventListener('click',download);
+$('#downloadPer').addEventListener('click',downloadPerCompanyZips);
 $('#downloadOne').addEventListener('click',downloadOnePdf);
 $('#empresas').addEventListener('click', async (e)=>{
   const b = e.target.closest('.mini'); if(!b) return;
   e.preventDefault(); e.stopPropagation();
   const g = GROUPS[+b.dataset.gi]; if(!g) return;
   const orig=b.textContent; b.disabled=true; b.textContent='…';
-  try{ if(b.dataset.kind==='pdf') await downloadCompanyPdf(g); else await downloadCompanyZip(g); }
-  catch(err){ console.error(err); }
+  try{
+    if(b.dataset.kind==='pdf') await downloadCompanyPdf(g);
+    else if(b.dataset.kind==='zip') await downloadCompanyZip(g);
+    else if(b.dataset.kind==='send') await sendCompany(g);
+  }
+  catch(err){ console.error(err); alert('Error: '+(err.message||err)); }
   finally{ b.disabled=false; b.textContent=orig; }
 });
 
@@ -270,7 +316,8 @@ async function ingest(fileLike){
   for(const f of arr){
     if(/__MACOSX/.test(f.name)||f.name.startsWith('.')) continue;
     const ext = (f.name.split('.').pop()||'').toLowerCase();
-    if(ext==='zip'){
+    const isCdr = /^R-\d{11}-/i.test(f.name.split('/').pop());
+    if(ext==='zip' && !isCdr){
       try{
         const zip = await JSZip.loadAsync(await f.arrayBuffer());
         for(const path of Object.keys(zip.files)){
@@ -279,10 +326,14 @@ async function ingest(fileLike){
           const base = path.split('/').pop();
           if(!base || base.startsWith('.') || /__MACOSX/.test(path)) continue;
           const e2 = (base.split('.').pop()||'').toLowerCase();
+          const baseIsCdr = /^R-\d{11}-/i.test(base);
+          if(baseIsCdr && (e2==='xml'||e2==='zip')){ pushFile(base,'cdr',new Uint8Array(await entry.async('arraybuffer'))); continue; }
           if(e2!=='pdf' && e2!=='xml') continue;
           pushFile(base, e2, new Uint8Array(await entry.async('arraybuffer')));
         }
       }catch(err){ console.warn('zip',err); }
+    } else if(isCdr){
+      pushFile(f.name, 'cdr', new Uint8Array(await f.arrayBuffer()));
     } else if(ext==='pdf' || ext==='xml'){
       pushFile(f.name, ext, new Uint8Array(await f.arrayBuffer()));
     }
@@ -290,9 +341,13 @@ async function ingest(fileLike){
   renderFiles();
   $('#run').disabled = RAW.length===0;
 }
-function pushFile(name, ext, bytes){
+function cdrKey(name){
+  const m = (name||'').split('/').pop().replace(/\.[^.]+$/,'').match(/^R-(\d{11})-(\d{2})-([A-Za-z0-9]+)-(\d+)/i);
+  return m ? m[1]+'|'+m[3]+'-'+m[4] : null;
+}
+function pushFile(name, kind, bytes){
   if(RAW.some(r=>r.name===name && r.bytes.length===bytes.length)) return;
-  RAW.push({name, ext, kind:ext, bytes});
+  RAW.push({name, ext:kind, kind, bytes});
 }
 function renderFiles(){
   const fl = $('#filelist'); fl.innerHTML='';
@@ -369,7 +424,9 @@ function parseXml(bytes){
 /* ---------- emparejado + agrupado ---------- */
 function buildComprobantes(){
   const map = new Map();
+  const cdrs = new Map(); // ruc|serie-numero -> archivo CDR
   for(const f of RAW){
+    if(f.kind==='cdr'){ const ck=cdrKey(f.name); if(ck && !cdrs.has(ck)) cdrs.set(ck,f); continue; }
     const k = baseKey(f.name);
     if(!map.has(k)) map.set(k,{key:k, pdf:null, xml:null});
     const g = map.get(k);
@@ -407,6 +464,12 @@ function buildComprobantes(){
     }
     if(k) byDoc.set(k,c);
     finals.push(c);
+  }
+  // adjuntar CDR por RUC|serie-numero
+  for(const c of finals){
+    const ruc=(c.meta&&c.meta.emisorRuc)||(c.fromName&&c.fromName.ruc)||'';
+    const sn =(c.meta&&c.meta.serieNum) ||(c.fromName&&c.fromName.serieNum) ||'';
+    if(ruc&&sn){ const ck=ruc+'|'+sn; if(cdrs.has(ck)) c.cdr=cdrs.get(ck); }
   }
   return finals;
 }
@@ -478,8 +541,9 @@ function renderResults(){
       const fecha = m? (m.fecha||'-') : '-';
       const tot = m&&m.total? (m.moneda+' '+Number(m.total).toLocaleString('es-PE',{minimumFractionDigits:2})) : '-';
       if(m&&m.total) totalMonto[m.moneda]=(totalMonto[m.moneda]||0)+Number(m.total);
-      const estado = (c.pdf&&c.xml)?'<span class="tag ok">PDF + XML</span>':
-                     (c.pdf?'<span class="tag w">solo PDF</span>':'<span class="tag w">solo XML</span>');
+      const estado = ((c.pdf&&c.xml)?'<span class="tag ok">PDF + XML</span>':
+                     (c.pdf?'<span class="tag w">solo PDF</span>':'<span class="tag w">solo XML</span>'))
+                     + (c.cdr?' <span class="tag cdr">CDR</span>':'');
       return `<tr><td style="color:var(--ink);font-weight:500">${serieLabel(c)}</td><td class="muted">${tipo}</td><td class="muted">${fecha}</td><td class="right">${tot}</td><td>${estado}</td></tr>`;
     }).join('');
     const totStr = Object.keys(totalMonto).map(k=>`${k} ${totalMonto[k].toLocaleString('es-PE',{minimumFractionDigits:2})}`).join(' · ')||'';
@@ -487,10 +551,15 @@ function renderResults(){
         <div class="emp-id"><div class="name">${g.name}</div><div class="ruc">RUC ${g.ruc}</div></div>
         <div class="emp-meta"><div class="cnt">${g.comps.length} comprobante(s)</div><div class="muted tnum" style="font-size:12.5px">${totStr}</div></div>
         <div class="emp-actions">
+          <button class="mini send" data-gi="${gi}" data-kind="send" title="Enviar PDF+XML+CDR al correo de esta empresa">Enviar</button>
           <button class="mini" data-gi="${gi}" data-kind="pdf" title="Un solo PDF con todas las facturas de esta empresa">PDF</button>
           <button class="mini ghost" data-gi="${gi}" data-kind="zip" title="ZIP con los archivos de esta empresa">ZIP</button>
         </div>
       </summary>
+      <div class="emp-mail">
+        <label>Correo</label>
+        <input type="email" class="mail-input" data-ruc="${g.ruc}" value="${(MAILS[g.ruc]||'').replace(/"/g,'&quot;')}" placeholder="correo@empresa.com">
+      </div>
       <table><thead><tr><th>Serie-Número</th><th>Tipo</th><th>Fecha</th><th class="right" style="text-align:right">Total</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`;
     cont.appendChild(det);
   });
@@ -696,6 +765,177 @@ async function downloadCompanyZip(g){
   const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
   triggerDownload(blob, safe(g.ruc+' - '+g.name)+'.zip');
   setProg(1, errors.length? `Listo · ${errors.length} aviso(s)` : `Listo · ${g.name} ✓`);
+}
+
+/* ================= CORREO (Outlook / Microsoft Graph) ================= */
+let MAILS = {};
+try{ MAILS = JSON.parse(localStorage.getItem('vx_mails')||'{}'); }catch(_){ MAILS={}; }
+function saveMails(){ try{ localStorage.setItem('vx_mails', JSON.stringify(MAILS)); }catch(_){} }
+try{ const c=localStorage.getItem('vx_az_client'), t=localStorage.getItem('vx_az_tenant');
+     if(c)$('#azClientId').value=c; if(t)$('#azTenantId').value=t; }catch(_){}
+
+let msalApp=null, msalAccount=null;
+function azCfg(){ return { clientId:$('#azClientId').value.trim(), tenantId:($('#azTenantId').value.trim()||'organizations') }; }
+
+async function initMsal(){
+  const {clientId,tenantId}=azCfg();
+  if(!clientId){ alert('Pega primero el Application (client) ID de Azure en la sección Correo.'); return null; }
+  try{ localStorage.setItem('vx_az_client',clientId); localStorage.setItem('vx_az_tenant',tenantId); }catch(_){}
+  if(typeof msal==='undefined'){ alert('No se cargó la librería de Microsoft (revisa tu conexión / que esté publicado en HTTPS).'); return null; }
+  if(msalApp && msalApp._key===clientId+tenantId) return msalApp;
+  msalApp = new msal.PublicClientApplication({
+    auth:{ clientId, authority:'https://login.microsoftonline.com/'+tenantId, redirectUri:location.origin },
+    cache:{ cacheLocation:'localStorage' }
+  });
+  msalApp._key=clientId+tenantId;
+  await msalApp.initialize();
+  return msalApp;
+}
+const GRAPH_SCOPES=['Mail.Send','User.Read'];
+
+async function signIn(){
+  const app=await initMsal(); if(!app) return;
+  try{
+    const res=await app.loginPopup({scopes:GRAPH_SCOPES, prompt:'select_account'});
+    msalAccount=res.account; app.setActiveAccount(msalAccount); showAccount();
+  }catch(e){ console.error(e); alert('No se pudo iniciar sesión: '+(e.message||e)); }
+}
+function signOut(){
+  if(msalApp && msalAccount){ msalApp.logoutPopup({account:msalAccount}).catch(()=>{}); }
+  msalAccount=null; showAccount();
+}
+function showAccount(){
+  const el=$('#acct'); if(!el) return;
+  if(msalAccount){
+    el.innerHTML='<span class="dot on"></span>Sesión: <b>'+(msalAccount.username||msalAccount.name||'')+'</b>';
+    $('#signin').style.display='none'; $('#signout').style.display='';
+  } else {
+    el.innerHTML='<span class="dot"></span>Sin sesión';
+    $('#signin').style.display=''; $('#signout').style.display='none';
+  }
+}
+async function getToken(){
+  const app=await initMsal(); if(!app) throw new Error('Configura Azure (Client ID) primero.');
+  if(!msalAccount){ const acc=app.getAllAccounts(); if(acc.length){ msalAccount=acc[0]; app.setActiveAccount(msalAccount);} }
+  if(!msalAccount){ await signIn(); }
+  if(!msalAccount) throw new Error('Inicia sesión con Outlook.');
+  try{ const r=await app.acquireTokenSilent({scopes:GRAPH_SCOPES, account:msalAccount}); return r.accessToken; }
+  catch(_){ const r=await app.acquireTokenPopup({scopes:GRAPH_SCOPES}); msalAccount=r.account; app.setActiveAccount(msalAccount); showAccount(); return r.accessToken; }
+}
+function u8ToB64(u8){
+  let s=''; const CH=0x8000;
+  for(let i=0;i<u8.length;i+=CH){ s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH)); }
+  return btoa(s);
+}
+async function graphSend(token,to,subject,html,attachments){
+  const msg={ message:{ subject, body:{contentType:'HTML',content:html},
+      toRecipients:[{emailAddress:{address:to}}],
+      attachments: attachments.map(a=>({'@odata.type':'#microsoft.graph.fileAttachment',name:a.name,contentType:a.mime||'application/octet-stream',contentBytes:u8ToB64(a.bytes)}))
+    }, saveToSentItems:true };
+  const r=await fetch('https://graph.microsoft.com/v1.0/me/sendMail',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(msg)});
+  if(!r.ok){ const t=await r.text().catch(()=>''); throw new Error('Graph '+r.status+' '+t.slice(0,160)); }
+}
+// arma ZIP(s) PDF+XML+CDR de una empresa, troceados para no pasar el límite de Graph
+async function companyAttachments(g){
+  const LIMIT=2.2*1024*1024;
+  const files=[];
+  for(const c of g.comps){
+    const label=safe(serieLabel(c));
+    if(c.pdf) files.push({name:label+'.pdf', bytes:c.pdf.bytes});
+    if(c.xml) files.push({name:label+'.xml', bytes:c.xml.bytes});
+    if(c.cdr) files.push({name:c.cdr.name.split('/').pop(), bytes:c.cdr.bytes});
+  }
+  const batches=[]; let cur=[],sz=0;
+  for(const f of files){ if(sz+f.bytes.length>LIMIT && cur.length){batches.push(cur);cur=[];sz=0;} cur.push(f); sz+=f.bytes.length; }
+  if(cur.length) batches.push(cur);
+  const out=[];
+  for(let i=0;i<batches.length;i++){
+    const zip=new JSZip(); batches[i].forEach(f=>zip.file(f.name,f.bytes));
+    const u8=await zip.generateAsync({type:'uint8array',compression:'DEFLATE'});
+    out.push({ name: safe(g.ruc+'_'+g.name)+(batches.length>1?('_parte'+(i+1)):'')+'.zip', bytes:u8, mime:'application/zip' });
+  }
+  return out;
+}
+function mailBody(g){
+  return '<p>Estimados,</p><p>Adjuntamos los comprobantes electrónicos (PDF, XML y CDR) correspondientes a <b>'+g.name+'</b> (RUC '+g.ruc+'), '+g.comps.length+' documento(s), para su registro ante SUNAT.</p><p>Saludos cordiales.</p>';
+}
+async function sendCompany(g){
+  const to=(MAILS[g.ruc]||'').trim();
+  if(!to){ alert('Falta el correo de '+g.name+'. Escríbelo en su tarjeta.'); return; }
+  const token=await getToken();
+  setProg(0,'Preparando envío a '+g.name+'…');
+  const atts=await companyAttachments(g);
+  for(let i=0;i<atts.length;i++){
+    const subject='Comprobantes electrónicos — '+g.name+(atts.length>1?(' (parte '+(i+1)+'/'+atts.length+')'):'');
+    setProg((i+1)/(atts.length+1),'Enviando a '+to+'… ('+(i+1)+'/'+atts.length+')');
+    await graphSend(token,to,subject,mailBody(g),[atts[i]]);
+  }
+  setProg(1,'Enviado a '+to+' ✓');
+}
+async function sendAll(){
+  const targets=GROUPS.filter(g=>(MAILS[g.ruc]||'').trim());
+  const faltan=GROUPS.length-targets.length;
+  if(!targets.length){ alert('Ninguna empresa tiene correo asignado.'); return; }
+  if(faltan && !confirm('Hay '+faltan+' empresa(s) sin correo; se omitirán. ¿Continuar?')) return;
+  const token=await getToken();
+  let ok=0,fail=0;
+  for(let j=0;j<targets.length;j++){
+    const g=targets[j];
+    try{ const atts=await companyAttachments(g);
+      for(let i=0;i<atts.length;i++){
+        const subject='Comprobantes electrónicos — '+g.name+(atts.length>1?(' (parte '+(i+1)+'/'+atts.length+')'):'');
+        await graphSend(token,(MAILS[g.ruc]||'').trim(),subject,mailBody(g),[atts[i]]);
+      } ok++;
+    }catch(e){ console.error(g.name,e); fail++; }
+    setProg((j+1)/targets.length,'Enviando… ('+(j+1)+'/'+targets.length+')');
+  }
+  setProg(1,'Listo · '+ok+' enviada(s)'+(fail?(' · '+fail+' con error'):''));
+}
+function importCsv(textStr){
+  let n=0;
+  textStr.split(/\r?\n/).forEach(line=>{
+    const p=line.split(/[;,\t]/).map(s=>s.trim());
+    if(p.length>=2 && /\d{8,11}/.test(p[0]) && p[1].includes('@')){ MAILS[p[0].replace(/\D/g,'')]=p[1]; n++; }
+  });
+  saveMails(); if(COMPS.length) renderResults();
+  alert(n+' correo(s) importado(s).');
+}
+
+/* listeners de correo */
+$('#signin').addEventListener('click',signIn);
+$('#signout').addEventListener('click',signOut);
+$('#csvImport').addEventListener('click',()=>$('#csvFile').click());
+$('#csvFile').addEventListener('change', async e=>{ const f=e.target.files[0]; if(f) importCsv(await f.text()); e.target.value=''; });
+$('#sendAll').addEventListener('click', async ()=>{ const b=$('#sendAll'),o=b.textContent; b.disabled=true; b.textContent='Enviando…'; try{ await sendAll(); }catch(e){ alert('Error: '+(e.message||e)); } finally{ b.disabled=false; b.textContent=o; } });
+$('#empresas').addEventListener('input', e=>{ const inp=e.target.closest('.mail-input'); if(!inp) return; MAILS[inp.dataset.ruc]=inp.value.trim(); saveMails(); });
+(async()=>{ try{ if(typeof msal!=='undefined' && $('#azClientId').value.trim()){ const app=await initMsal(); const acc=app?app.getAllAccounts():[]; if(acc&&acc.length){ msalAccount=acc[0]; app.setActiveAccount(msalAccount);} } }catch(_){ } showAccount(); })();
+
+/* ---------- 1 ZIP por empresa (master con un sub-ZIP por cada una) ---------- */
+async function downloadPerCompanyZips(){
+  const master = new JSZip();
+  const total = GROUPS.length || 1;
+  setProg(0,'Empaquetando por empresa…');
+  const csv = ['RUC,Empresa,Correo,Archivo,Comprobantes'];
+  for(let i=0;i<GROUPS.length;i++){
+    const g = GROUPS[i];
+    const cz = new JSZip();
+    for(const c of g.comps){
+      const label = safe(serieLabel(c));
+      if(c.pdf) cz.file(label+'.pdf', c.pdf.bytes);
+      if(c.xml) cz.file(label+'.xml', c.xml.bytes);
+      if(c.cdr) cz.file(c.cdr.name.split('/').pop(), c.cdr.bytes);
+    }
+    const fname = safe(g.ruc+' - '+g.name)+'.zip';
+    master.file(fname, await cz.generateAsync({type:'uint8array', compression:'DEFLATE'}));
+    const correo = (MAILS[g.ruc]||'').trim();
+    csv.push(`${g.ruc},"${g.name.replace(/"/g,'""')}",${correo},"${fname}",${g.comps.length}`);
+    setProg((i+1)/total, `Empaquetando ${g.name}… (${i+1}/${total})`); await tick();
+  }
+  master.file('_resumen.csv', '\ufeff'+csv.join('\r\n'));
+  setProg(.99,'Comprimiendo…');
+  const blob = await master.generateAsync({type:'blob', compression:'STORE'});
+  triggerDownload(blob, 'comprobantes_por_empresa_'+stamp()+'.zip');
+  setProg(1, `Listo · ${GROUPS.length} empresa(s) en ZIP independientes ✓`);
 }
 
 const tick = ()=>new Promise(r=>setTimeout(r,0));
