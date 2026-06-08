@@ -137,6 +137,15 @@ details.emp>summary::-webkit-details-marker{display:none}
 .emp .name{font-family:'Fraunces';font-weight:600;font-size:16px;color:var(--ink)}
 .emp .ruc{font-size:11px;color:var(--bronze);letter-spacing:.12em;font-weight:600;margin-top:3px}
 .emp .cnt{font-size:12.5px;color:var(--ink-soft);font-weight:500}
+details.emp>summary{flex-wrap:wrap}
+.emp-id{flex:1 1 auto;min-width:150px}
+.emp-meta{text-align:right;margin-left:auto}
+.emp-actions{display:flex;gap:8px;flex:0 0 auto}
+.mini{font-family:'Hanken Grotesk';font-weight:600;font-size:11px;letter-spacing:.05em;cursor:pointer;border:none;border-radius:8px;padding:8px 14px;color:#fdfcf7;background:var(--pine);transition:.15s;box-shadow:0 6px 14px -10px rgba(31,77,58,.7)}
+.mini:hover{background:var(--pine-d);transform:translateY(-1px)}
+.mini.ghost{background:transparent;color:var(--pine);border:1px solid var(--line);box-shadow:none}
+.mini.ghost:hover{background:rgba(31,77,58,.05);border-color:var(--pine)}
+.mini:disabled{opacity:.5;cursor:wait;transform:none}
 .emp table{width:100%;border-collapse:collapse;font-size:13.5px}
 .emp th{text-align:left;color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;padding:11px 20px;border-top:1px solid var(--line);background:#faf7f0}
 .emp td{padding:11px 20px;border-top:1px solid var(--line-soft);color:var(--ink-soft)}
@@ -246,6 +255,15 @@ $('#reset').addEventListener('click',()=>{RAW=[];COMPS=[];GROUPS=[];renderFiles(
 $('#run').addEventListener('click',process);
 $('#download').addEventListener('click',download);
 $('#downloadOne').addEventListener('click',downloadOnePdf);
+$('#empresas').addEventListener('click', async (e)=>{
+  const b = e.target.closest('.mini'); if(!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const g = GROUPS[+b.dataset.gi]; if(!g) return;
+  const orig=b.textContent; b.disabled=true; b.textContent='…';
+  try{ if(b.dataset.kind==='pdf') await downloadCompanyPdf(g); else await downloadCompanyZip(g); }
+  catch(err){ console.error(err); }
+  finally{ b.disabled=false; b.textContent=orig; }
+});
 
 async function ingest(fileLike){
   const arr = Array.from(fileLike||[]);
@@ -451,7 +469,7 @@ function renderResults(){
   ].map(([l,n])=>`<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
 
   const cont = $('#empresas'); cont.innerHTML='';
-  for(const g of GROUPS){
+  GROUPS.forEach((g,gi)=>{
     const det=document.createElement('details'); det.className='emp';
     let totalMonto={};
     const rows = g.comps.map(c=>{
@@ -466,12 +484,16 @@ function renderResults(){
     }).join('');
     const totStr = Object.keys(totalMonto).map(k=>`${k} ${totalMonto[k].toLocaleString('es-PE',{minimumFractionDigits:2})}`).join(' · ')||'';
     det.innerHTML = `<summary>
-        <div><div class="name">${g.name}</div><div class="ruc">RUC ${g.ruc}</div></div>
-        <div style="text-align:right"><div class="cnt">${g.comps.length} comprobante(s)</div><div class="muted tnum" style="font-size:12.5px">${totStr}</div></div>
+        <div class="emp-id"><div class="name">${g.name}</div><div class="ruc">RUC ${g.ruc}</div></div>
+        <div class="emp-meta"><div class="cnt">${g.comps.length} comprobante(s)</div><div class="muted tnum" style="font-size:12.5px">${totStr}</div></div>
+        <div class="emp-actions">
+          <button class="mini" data-gi="${gi}" data-kind="pdf" title="Un solo PDF con todas las facturas de esta empresa">PDF</button>
+          <button class="mini ghost" data-gi="${gi}" data-kind="zip" title="ZIP con los archivos de esta empresa">ZIP</button>
+        </div>
       </summary>
       <table><thead><tr><th>Serie-Número</th><th>Tipo</th><th>Fecha</th><th class="right" style="text-align:right">Total</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`;
     cont.appendChild(det);
-  }
+  });
 }
 
 /* ---------- generación del ZIP ---------- */
@@ -554,7 +576,11 @@ async function download(){
 function clip(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'...' : s; }
 function ansi(s){ return String(s||'').replace(/[^\x00-\xFF]/g,'?'); }
 
-async function downloadOnePdf(){
+function stamp(){ return new Date().toISOString().slice(0,10); }
+function triggerDownload(blob,name){ const a=$('#dl'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); }
+
+// Construye un PDF consolidado para un conjunto de empresas (con o sin portada general)
+async function buildConsolidatedPdf(groups, withCover, onStep){
   const { rgb, StandardFonts } = PDFLib;
   const PINE=rgb(.122,.302,.227), BRONZE=rgb(.612,.482,.247), BRONZE_L=rgb(.78,.65,.40),
         INK=rgb(.106,.141,.122), MUT=rgb(.42,.45,.43), WHITE=rgb(1,1,1),
@@ -565,27 +591,25 @@ async function downloadOnePdf(){
   const W=595.28, H=841.89, A4=[W,H], M=48;
   const text=(pg,s,x,y,sz,f,c)=>pg.drawText(ansi(s),{x,y,size:sz,font:f,color:c});
   const rightX=(s,sz,f)=>W-M-f.widthOfTextAtSize(ansi(s),sz);
+  const errors=[];
 
-  let errors=[], done=0; const total=COMPS.length||1;
-  setProg(0,'Generando PDF consolidado…');
-  const hoy = new Date().toLocaleDateString('es-PE');
+  if(withCover){
+    const cs=groups.flatMap(g=>g.comps);
+    const cv = out.addPage(A4);
+    cv.drawRectangle({x:0,y:H-150,width:W,height:150,color:PINE});
+    text(cv,'COMPROBANTES CONSOLIDADOS',M,H-86,20,fontB,WHITE);
+    text(cv,'Generado por Veronix  ·  '+new Date().toLocaleDateString('es-PE'),M,H-110,10,font,SOFT);
+    let y=H-200;
+    text(cv,'Resumen',M,y,13,fontB,PINE); y-=10;
+    cv.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1,color:LINE}); y-=26;
+    [['Empresas',groups.length],['Comprobantes',cs.length],
+     ['Emparejados (PDF + XML)',cs.filter(c=>c.pdf&&c.xml).length],
+     ['Solo PDF',cs.filter(c=>c.pdf&&!c.xml).length],
+     ['Solo XML',cs.filter(c=>!c.pdf&&c.xml).length]
+    ].forEach(([l,v])=>{ text(cv,l,M,y,11,font,MUT); text(cv,String(v),260,y,11,fontB,INK); y-=22; });
+  }
 
-  // ---- Portada ----
-  const cv = out.addPage(A4);
-  cv.drawRectangle({x:0,y:H-150,width:W,height:150,color:PINE});
-  text(cv,'COMPROBANTES CONSOLIDADOS',M,H-86,20,fontB,WHITE);
-  text(cv,'Generado por Veronix  ·  '+hoy,M,H-110,10,font,SOFT);
-  let y=H-200;
-  text(cv,'Resumen',M,y,13,fontB,PINE); y-=10;
-  cv.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1,color:LINE}); y-=26;
-  [['Empresas',GROUPS.length],['Comprobantes',COMPS.length],
-   ['Emparejados (PDF + XML)',COMPS.filter(c=>c.pdf&&c.xml).length],
-   ['Solo PDF',COMPS.filter(c=>c.pdf&&!c.xml).length],
-   ['Solo XML',COMPS.filter(c=>!c.pdf&&c.xml).length]
-  ].forEach(([l,v])=>{ text(cv,l,M,y,11,font,MUT); text(cv,String(v),260,y,11,fontB,INK); y-=22; });
-
-  // ---- Por empresa ----
-  for(const g of GROUPS){
+  for(const g of groups){
     let pg = out.addPage(A4);
     pg.drawRectangle({x:0,y:H-90,width:W,height:90,color:PINE});
     text(pg,clip(g.name,46),M,H-50,17,fontB,WHITE);
@@ -596,20 +620,17 @@ async function downloadOnePdf(){
     const totStr=Object.keys(tot).map(k=>k+' '+tot[k].toLocaleString('es-PE',{minimumFractionDigits:2})).join('    ');
     if(totStr) text(pg,totStr,rightX(totStr,11,fontB),yy,11,fontB,PINE);
     yy-=22; pg.drawLine({start:{x:M,y:yy},end:{x:W-M,y:yy},thickness:1,color:LINE}); yy-=20;
-    // encabezado de tabla
-    text(pg,'SERIE-NÚMERO',M,yy,8,fontB,MUT); text(pg,'TIPO',200,yy,8,fontB,MUT);
+    text(pg,'SERIE-NUMERO',M,yy,8,fontB,MUT); text(pg,'TIPO',200,yy,8,fontB,MUT);
     text(pg,'TOTAL',360,yy,8,fontB,MUT); text(pg,'ESTADO',480,yy,8,fontB,MUT); yy-=16;
     for(const c of g.comps){
       if(yy<60){ pg=out.addPage(A4); yy=H-60; }
-      const m=c.meta;
-      const est=(c.pdf&&c.xml)?'PDF + XML':(c.pdf?'solo PDF':'solo XML');
+      const m=c.meta, est=(c.pdf&&c.xml)?'PDF + XML':(c.pdf?'solo PDF':'solo XML');
       text(pg,clip(serieLabel(c),22),M,yy,10,font,INK);
       text(pg,m?(TIPOS[m.tipo]||m.docName||'-'):'-',200,yy,10,font,MUT);
       text(pg,m&&m.total?(m.moneda+' '+Number(m.total).toLocaleString('es-PE',{minimumFractionDigits:2})):'-',360,yy,10,font,INK);
       text(pg,est,480,yy,9,fontB,(c.pdf&&c.xml)?PINE:BRONZE);
       yy-=18;
     }
-    // anexar las hojas reales de cada factura + adjuntar XML
     for(const c of g.comps){
       try{
         if(c.pdf){
@@ -619,16 +640,62 @@ async function downloadOnePdf(){
         }
         if(c.xml){ await out.attach(c.xml.bytes, safe(serieLabel(c))+'.xml', {mimeType:'application/xml', description:'XML SUNAT'}); }
       }catch(e){ errors.push(serieLabel(c)+': '+e.message); }
-      done++; setProg(done/total, `Añadiendo ${serieLabel(c)}… (${done}/${total})`); await tick();
+      if(onStep) onStep(); await tick();
     }
   }
+  return { bytes: await out.save(), errors };
+}
 
-  setProg(.99,'Guardando PDF…');
-  const bytes = await out.save();
-  const a=$('#dl'); a.href=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
-  a.download='comprobantes_consolidado_'+new Date().toISOString().slice(0,10)+'.pdf';
-  a.click();
+async function downloadOnePdf(){
+  const total=COMPS.length||1; let done=0;
+  setProg(0,'Generando PDF consolidado…');
+  const {bytes,errors}=await buildConsolidatedPdf(GROUPS, true, ()=>{ done++; setProg(done/total,`Añadiendo… (${done}/${total})`); });
+  triggerDownload(new Blob([bytes],{type:'application/pdf'}), 'comprobantes_consolidado_'+stamp()+'.pdf');
   setProg(1, errors.length? `PDF listo · ${errors.length} aviso(s)` : 'PDF consolidado listo ✓');
+}
+
+/* ---------- Descargas POR EMPRESA ---------- */
+async function downloadCompanyPdf(g){
+  setProg(0,'Generando PDF de '+g.name+'…');
+  const {bytes,errors}=await buildConsolidatedPdf([g], false, ()=>{});
+  triggerDownload(new Blob([bytes],{type:'application/pdf'}), safe(g.ruc+' - '+g.name)+'.pdf');
+  setProg(1, errors.length? `Listo · ${errors.length} aviso(s)` : `Listo · ${g.name} ✓`);
+}
+
+async function downloadCompanyZip(g){
+  const mode=$('#mode').value, alsoXml=$('#alsoXml').checked;
+  setProg(0,'Generando ZIP de '+g.name+'…');
+  const zip=new JSZip(); const errors=[];
+  if(mode==='merge'){
+    const out=await PDFDocument.create();
+    for(const c of g.comps){
+      try{
+        if(c.pdf){ const src=await PDFDocument.load(c.pdf.bytes,{ignoreEncryption:true}); const pages=await out.copyPages(src,src.getPageIndices()); pages.forEach(p=>out.addPage(p)); }
+        if(c.xml){ await out.attach(c.xml.bytes, safe(serieLabel(c))+'.xml',{mimeType:'application/xml',description:'XML SUNAT'}); }
+      }catch(e){ errors.push(serieLabel(c)+': '+e.message); } await tick();
+    }
+    zip.file(safe(g.ruc+' - '+g.name)+'.pdf', await out.save());
+    if(alsoXml){ const xf=zip.folder('xml'); for(const c of g.comps){ if(c.xml) xf.file(safe(serieLabel(c))+'.xml',c.xml.bytes); } }
+  } else {
+    for(const c of g.comps){
+      const label=safe(serieLabel(c));
+      try{
+        if(mode==='embed'){
+          if(c.pdf&&c.xml){ zip.file(label+'.pdf', await embedXmlInPdf(c.pdf.bytes,c.xml.bytes,label+'.xml')); if(alsoXml) zip.file(label+'.xml',c.xml.bytes); }
+          else if(c.pdf){ zip.file(label+'.pdf',c.pdf.bytes); }
+          else if(c.xml){ zip.file(label+'.xml',c.xml.bytes); errors.push(label+': solo XML'); }
+        } else {
+          if(c.pdf) zip.file(label+'.pdf',c.pdf.bytes);
+          if(c.xml) zip.file(label+'.xml',c.xml.bytes);
+        }
+      }catch(e){ errors.push(label+': '+e.message); } await tick();
+    }
+  }
+  if(errors.length) zip.file('_AVISOS.txt', errors.join('\n'));
+  setProg(.99,'Comprimiendo…');
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+  triggerDownload(blob, safe(g.ruc+' - '+g.name)+'.zip');
+  setProg(1, errors.length? `Listo · ${errors.length} aviso(s)` : `Listo · ${g.name} ✓`);
 }
 
 const tick = ()=>new Promise(r=>setTimeout(r,0));
